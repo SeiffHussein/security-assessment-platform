@@ -20,7 +20,7 @@ FEATURES (one row per finding; all integers) - defined in FEATURE_COLUMNS:
 LABEL: priority in {"P1", "P2", "P3"}
 
 Done by Foundation:   dataset generator + CSV, load_dataset(), extract_features().
-TODO for Member 4:    train_model() and classify_findings().
+Done by Member 4:     train_model() and classify_findings().
 """
 
 from __future__ import annotations
@@ -29,6 +29,9 @@ import random
 from pathlib import Path
 
 import pandas as pd
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
 
 import config
 from schemas import ML_PRIORITIES, SAMPLE_SUFFIX, SEVERITY_SCORES
@@ -44,7 +47,7 @@ EXPLOIT_KEYWORDS = (
     "path traversal", "authentication bypass", "clear text", "cleartext",
 )
 
-_MODEL = None  # cache for the trained model (Member 4 fills this in classify_findings)
+_MODEL = None  # cache for the trained model (filled in by classify_findings)
 
 
 # --------------------------------------------------------------------- done by Foundation
@@ -121,7 +124,7 @@ def generate_synthetic_dataset(path: str | Path = config.SYNTHETIC_DATASET_PATH,
     return out
 
 
-# --------------------------------------------------------------------- TODO (Member 4)
+# --------------------------------------------------------------------- Member 4
 def train_model() -> object:
     """Train a simple classifier on the synthetic dataset.
 
@@ -132,18 +135,24 @@ def train_model() -> object:
     Raises:
         RuntimeError: dataset missing/invalid (from load_dataset()).
 
-    TODO (Member 4):
-        X, y = load_dataset()
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=config.ML_TEST_SIZE, random_state=config.RANDOM_SEED, stratify=y)
-        model = DecisionTreeClassifier(max_depth=4, random_state=config.RANDOM_SEED)
-            (a small decision tree is easy to explain; you may print/plot it for the slides)
-        model.fit(X_train, y_train)
-        model.evaluation_ = {"accuracy": accuracy_score(y_test, model.predict(X_test)), ...}
-        return model
-        Training must stay fast (< 1 s). No saving to disk is required.
+    A small decision tree (max_depth=4) is used because it is fast (< 1 s),
+    needs no saving to disk, and is easy to explain in the presentation.
     """
-    raise NotImplementedError("train_model is not implemented yet (Member 4).")
+    X, y = load_dataset()
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=config.ML_TEST_SIZE,
+        random_state=config.RANDOM_SEED,
+        stratify=y,
+    )
+    model = DecisionTreeClassifier(max_depth=4, random_state=config.RANDOM_SEED)
+    model.fit(X_train, y_train)
+    model.evaluation_ = {
+        "accuracy": float(accuracy_score(y_test, model.predict(X_test))),
+        "train_rows": int(len(X_train)),
+        "test_rows": int(len(X_test)),
+    }
+    return model
 
 
 def classify_findings(findings: list[dict]) -> list[dict]:
@@ -160,19 +169,18 @@ def classify_findings(findings: list[dict]) -> list[dict]:
     Raises:
         RuntimeError: model could not be trained (the dashboard then shows the
                       findings without ML priority).
-
-    TODO (Member 4):
-        global _MODEL
-        if _MODEL is None: _MODEL = train_model()
-        X = pd.DataFrame([extract_features(f) for f in findings], columns=FEATURE_COLUMNS)
-        predictions = _MODEL.predict(X)
-        return [{**f, "ml_priority": str(p)} for f, p in zip(findings, predictions)]
     """
     if not findings:
         return []
-    raise NotImplementedError("classify_findings is not implemented yet (Member 4).")
+    global _MODEL
+    if _MODEL is None:
+        _MODEL = train_model()
+    X = pd.DataFrame([extract_features(f) for f in findings], columns=FEATURE_COLUMNS)
+    predictions = _MODEL.predict(X)
+    return [{**f, "ml_priority": str(p)} for f, p in zip(findings, predictions)]
 
 
 if __name__ == "__main__":
     # python -m modules.ml_classifier  -> regenerate data/synthetic_findings.csv
     print(f"Wrote {generate_synthetic_dataset()}")
+    print("Evaluation:", train_model().evaluation_)
